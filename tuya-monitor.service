@@ -1,0 +1,14 @@
+[Unit]
+Description=Tuya Device Monitor Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/frans/Documents/github/tuya-project
+ExecStart=/home/frans/Documents/github/tuya-project/.venv/bin/python3 /home/frans/Documents/github/tuya-project/monitor_service.py
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target

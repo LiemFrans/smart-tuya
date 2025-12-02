@@ -1,0 +1,14 @@
+[Unit]
+Description=Tuya Battery Manager Service
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/frans/Documents/github/tuya-project
+ExecStart=/home/frans/Documents/github/tuya-project/.venv/bin/python3 /home/frans/Documents/github/tuya-project/battery_manager.py
+Restart=on-failure
+RestartSec=10
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=default.target
