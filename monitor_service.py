@@ -2,10 +2,9 @@ import os
 import time
 import tinytuya
 import subprocess
+import requests
 from dotenv import load_dotenv
 from datetime import datetime
-from influxdb_client import InfluxDBClient, Point
-from influxdb_client.client.write_api import SYNCHRONOUS
 
 # Load environment variables
 load_dotenv()
@@ -16,45 +15,41 @@ API_REGION = os.getenv("TUYA_API_REGION", "us")
 DEVICE_ID = os.getenv("TUYA_DEVICE_ID")
 DEVICE_NAME = "Socket Kamar Tidur"
 
-# InfluxDB Config
-INFLUX_URL = os.getenv("INFLUXDB_URL")
-INFLUX_TOKEN = os.getenv("INFLUXDB_TOKEN")
-INFLUX_ORG = os.getenv("INFLUXDB_ORG")
-INFLUX_BUCKET = os.getenv("INFLUXDB_BUCKET")
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 
 # Configuration
 CHECK_INTERVAL = 10  # Seconds between checks
 
-def get_influx_client():
-    if INFLUX_URL and INFLUX_TOKEN:
-        return InfluxDBClient(url=INFLUX_URL, token=INFLUX_TOKEN, org=INFLUX_ORG)
-    return None
+def send_telegram_message(message):
+    """Sends a message to Telegram."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return
 
-def write_to_influx(measurement, fields, tags=None):
     try:
-        client = get_influx_client()
-        if not client: return
-        
-        write_api = client.write_api(write_options=SYNCHRONOUS)
-        point = Point(measurement)
-        
-        for k, v in fields.items():
-            point = point.field(k, v)
-            
-        if tags:
-            for k, v in tags.items():
-                point = point.tag(k, v)
-                
-        write_api.write(bucket=INFLUX_BUCKET, org=INFLUX_ORG, record=point)
+        url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
+        payload = {
+            "chat_id": TELEGRAM_CHAT_ID,
+            "text": message,
+            "parse_mode": "Markdown"
+        }
+        requests.post(url, json=payload, timeout=5)
     except Exception as e:
-        print(f"InfluxDB Write Error: {e}")
+        print(f"[{datetime.now()}] Failed to send Telegram message: {e}")
 
 def send_notification(title, message, urgency="normal"):
-    """Sends a GNOME notification using notify-send."""
+    """Sends a GNOME notification using notify-send and Telegram."""
     try:
         # Use 'tuya-app' to match the filename 'tuya-app.desktop'
         subprocess.run(["notify-send", "-a", "tuya-app", "-u", urgency, title, message])
         print(f"[{datetime.now()}] Notification sent: {title} - {message}")
+        
+        # Send to Telegram as well
+        telegram_msg = f"*{title}*\n{message}"
+        if urgency == "critical":
+            telegram_msg = f"🚨 *{title}* 🚨\n{message}"
+        send_telegram_message(telegram_msg)
+        
     except Exception as e:
         print(f"[{datetime.now()}] Failed to send notification: {e}")
 
@@ -87,6 +82,7 @@ def main():
 
     # Initial state
     last_is_online = None 
+    last_api_error_notified = False
 
     while True:
         try:
@@ -112,12 +108,34 @@ def main():
             
             is_online = c.getconnectstatus(DEVICE_ID)
             
-            # Log to InfluxDB
-            write_to_influx("device_connectivity", 
-                fields={"is_online": bool(is_online)},
-                tags={"device_name": DEVICE_NAME, "device_id": DEVICE_ID}
-            )
-            
+            # Handle error response from tinytuya
+            if isinstance(is_online, dict) and 'Error' in is_online:
+                error_msg = is_online['Error']
+                payload = is_online.get('Payload', '')
+                print(f"[{datetime.now()}] Error checking status: {error_msg} - {payload}")
+                
+                if "don't have access to this API" in payload:
+                    if not last_api_error_notified:
+                        # Extract IP if present for a cleaner message
+                        clean_msg = "Your IP address is not whitelisted in Tuya Cloud."
+                        if "your ip" in payload:
+                            try:
+                                ip_addr = payload.split("your ip(")[1].split(")")[0]
+                                clean_msg = f"Your IP ({ip_addr}) is not whitelisted in Tuya Cloud."
+                            except:
+                                pass
+                        
+                        send_notification(
+                            "Tuya API Access Error",
+                            f"{clean_msg}\nPlease update the whitelist in Tuya IoT Platform.",
+                            urgency="critical"
+                        )
+                        last_api_error_notified = True
+                
+                is_online = False
+            else:
+                last_api_error_notified = False
+
             current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
             if last_is_online is None:

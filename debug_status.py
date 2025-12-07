@@ -15,8 +15,8 @@ c = tinytuya.Cloud(apiRegion=API_REGION, apiKey=API_KEY, apiSecret=API_SECRET)
 print("--- Checking Device Status via Cloud ---")
 try:
     # getstatus returns the DPS values
-    # status = c.getstatus(DEVICE_ID)
-    # print(f"getstatus: {json.dumps(status, indent=2)}")
+    status = c.getstatus(DEVICE_ID)
+    print(f"getstatus: {json.dumps(status, indent=2)}")
     
     # getconnectstatus
     print(f"Checking connection status for {DEVICE_ID}...")

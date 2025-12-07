@@ -2,4 +2,3 @@ flask
 tinytuya
 python-dotenv
 psutil
-influxdb-client
